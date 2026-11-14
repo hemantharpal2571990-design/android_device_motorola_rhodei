@@ -39,12 +39,10 @@ jobs:
           repo init --depth=1 -u https://github.com/minimal-manifest-twrp/platform_manifest_twrp_aosp.git -b twrp-12.1
           repo sync -c -j$(nproc --all) --force-sync --no-clone-bundle --no-tags
 
-      - name: Copy Device Tree & Setup Clean Build
+      - name: Copy Device Tree & Apply Touch Fix
         run: |
           mkdir -p ~/twrp/device/motorola/rhodei
           cp -r ${{ github.workspace }}/twrp_device_tree/* ~/twrp/device/motorola/rhodei/
-          
-          # Purani omni aur vendorsetup files ko delete karein:
           rm -f ~/twrp/device/motorola/rhodei/vendorsetup.sh
           rm -f ~/twrp/device/motorola/rhodei/omni_rhodei.mk
           
@@ -62,7 +60,7 @@ jobs:
               android.hardware.boot@1.0-service
           EOF
 
-          # 2. Clean twrp_rhodei.mk (No missing vendor dependencies)
+          # 2. Clean twrp_rhodei.mk
           cat << 'EOF' > ~/twrp/device/motorola/rhodei/twrp_rhodei.mk
           $(call inherit-product, $(SRC_TARGET_DIR)/product/base.mk)
           $(call inherit-product, $(SRC_TARGET_DIR)/product/core_64_bit.mk)
@@ -84,6 +82,19 @@ jobs:
               twrp_rhodei-eng
           EOF
 
+          # 4. ILITEK TDDI Touch & 1080x2400 Display Fixes in BoardConfig.mk:
+          cat << 'EOF' >> ~/twrp/device/motorola/rhodei/BoardConfig.mk
+
+          # --- TWRP ILITEK TDDI Touch & Display Fix ---
+          TW_THEME := portrait_hdpi
+          TARGET_SCREEN_WIDTH := 1080
+          TARGET_SCREEN_HEIGHT := 2400
+          TW_INPUT_BLACKLIST := "hbtp_vm hbtp_input"
+          TW_SCREEN_BLANK_ON_BOOT := true
+          TW_NO_SCREEN_BLANK := true
+          TW_STATUS_ICONS_ALIGN := center
+          EOF
+
       - name: Compile TWRP Boot Image
         run: |
           cd ~/twrp
@@ -95,5 +106,5 @@ jobs:
       - name: Upload Recovery Image
         uses: actions/upload-artifact@v4
         with:
-          name: TWRP-MotoG62-rhodei
+          name: TWRP-MotoG62-rhodei-TouchFix
           path: /home/runner/twrp/out/target/product/rhodei/*.img
