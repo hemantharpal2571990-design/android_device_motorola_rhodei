@@ -39,12 +39,13 @@ jobs:
           repo init --depth=1 -u https://github.com/minimal-manifest-twrp/platform_manifest_twrp_aosp.git -b twrp-12.1
           repo sync -c -j$(nproc --all) --force-sync --no-clone-bundle --no-tags
 
-      - name: Copy Device Tree & Auto Fix
+      - name: Copy Device Tree & Setup TWRP Standard
         run: |
           mkdir -p ~/twrp/device/motorola/rhodei
           cp -r ${{ github.workspace }}/twrp_device_tree/* ~/twrp/device/motorola/rhodei/
           rm -f ~/twrp/device/motorola/rhodei/vendorsetup.sh
-          # Clean & Error-Free device.mk create karein:
+          
+          # 1. Clean device.mk
           cat << 'EOF' > ~/twrp/device/motorola/rhodei/device.mk
           $(call inherit-product, $(SRC_TARGET_DIR)/product/generic.mk)
           $(call inherit-product, $(SRC_TARGET_DIR)/product/updatable_apex.mk)
@@ -58,12 +59,35 @@ jobs:
               android.hardware.boot@1.0-service
           EOF
 
+          # 2. Modern TWRP 12.1 Product Makefile (vendor/twrp):
+          cat << 'EOF' > ~/twrp/device/motorola/rhodei/twrp_rhodei.mk
+          $(call inherit-product, $(SRC_TARGET_DIR)/product/core_64_bit.mk)
+          $(call inherit-product, $(SRC_TARGET_DIR)/product/base.mk)
+          $(call inherit-product, vendor/twrp/config/common.mk)
+          $(call inherit-product, device/motorola/rhodei/device.mk)
+
+          PRODUCT_DEVICE := rhodei
+          PRODUCT_NAME := twrp_rhodei
+          PRODUCT_BRAND := motorola
+          PRODUCT_MODEL := moto g62 5g
+          PRODUCT_MANUFACTURER := motorola
+          EOF
+
+          # 3. AndroidProducts.mk:
+          cat << 'EOF' > ~/twrp/device/motorola/rhodei/AndroidProducts.mk
+          PRODUCT_MAKEFILES := \
+              $(LOCAL_DIR)/twrp_rhodei.mk
+
+          COMMON_LUNCH_CHOICES := \
+              twrp_rhodei-eng
+          EOF
+
       - name: Compile TWRP Boot Image
         run: |
           cd ~/twrp
           export ALLOW_MISSING_DEPENDENCIES=true
           source build/envsetup.sh
-          lunch omni_rhodei-eng || lunch twrp_rhodei-eng
+          lunch twrp_rhodei-eng
           mka bootimage -j$(nproc --all)
 
       - name: Upload Recovery Image
