@@ -43,9 +43,20 @@ jobs:
         run: |
           mkdir -p ~/twrp/device/motorola/rhodei
           cp -r ${{ github.workspace }}/twrp_device_tree/* ~/twrp/device/motorola/rhodei/
-          # Ye command us obsolete line ko apne aap delete kar degi:
-          sed -i '/PRODUCT_STATIC_BOOT_CONTROL_HAL/d' ~/twrp/device/motorola/rhodei/device.mk
           rm -f ~/twrp/device/motorola/rhodei/vendorsetup.sh
+          # Clean & Error-Free device.mk create karein:
+          cat << 'EOF' > ~/twrp/device/motorola/rhodei/device.mk
+          $(call inherit-product, $(SRC_TARGET_DIR)/product/generic.mk)
+          $(call inherit-product, $(SRC_TARGET_DIR)/product/updatable_apex.mk)
+          AB_OTA_POSTINSTALL_CONFIG += \
+              RUN_POSTINSTALL_system=true \
+              POSTINSTALL_PATH_system=system/bin/otapreopt_script \
+              FILESYSTEM_TYPE_system=ext4 \
+              POSTINSTALL_OPTIONAL_system=true
+          PRODUCT_PACKAGES += \
+              android.hardware.boot@1.0-impl \
+              android.hardware.boot@1.0-service
+          EOF
 
       - name: Compile TWRP Boot Image
         run: |
