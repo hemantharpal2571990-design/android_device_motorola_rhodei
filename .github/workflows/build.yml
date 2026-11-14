@@ -39,14 +39,18 @@ jobs:
           repo init --depth=1 -u https://github.com/minimal-manifest-twrp/platform_manifest_twrp_aosp.git -b twrp-12.1
           repo sync -c -j$(nproc --all) --force-sync --no-clone-bundle --no-tags
 
-      - name: Copy Device Tree
+      - name: Copy Device Tree & Auto Fix
         run: |
           mkdir -p ~/twrp/device/motorola/rhodei
           cp -r ${{ github.workspace }}/twrp_device_tree/* ~/twrp/device/motorola/rhodei/
+          # Ye command us obsolete line ko apne aap delete kar degi:
+          sed -i '/PRODUCT_STATIC_BOOT_CONTROL_HAL/d' ~/twrp/device/motorola/rhodei/device.mk
+          rm -f ~/twrp/device/motorola/rhodei/vendorsetup.sh
 
       - name: Compile TWRP Boot Image
         run: |
           cd ~/twrp
+          export ALLOW_MISSING_DEPENDENCIES=true
           source build/envsetup.sh
           lunch omni_rhodei-eng || lunch twrp_rhodei-eng
           mka bootimage -j$(nproc --all)
