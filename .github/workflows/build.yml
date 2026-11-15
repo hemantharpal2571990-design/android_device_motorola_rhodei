@@ -39,7 +39,7 @@ jobs:
           repo init --depth=1 -u https://github.com/minimal-manifest-twrp/platform_manifest_twrp_aosp.git -b twrp-12.1
           repo sync -c -j$(nproc --all) --force-sync --no-clone-bundle --no-tags
 
-      - name: Setup TWRP Device Tree & Official Touch Loader
+      - name: Configure Touch, Drivers & USB
         run: |
           mkdir -p ~/twrp/device/motorola/rhodei
           cp -r ${{ github.workspace }}/twrp_device_tree/* ~/twrp/device/motorola/rhodei/
@@ -82,16 +82,51 @@ jobs:
               twrp_rhodei-eng
           EOF
 
-          # 4. Copy .ko Modules to both vendor and root module paths
-          mkdir -p ~/twrp/device/motorola/rhodei/recovery/root/vendor/lib/modules
+          # 4. Copy .ko Modules into all recovery ramdisk search paths
           mkdir -p ~/twrp/device/motorola/rhodei/recovery/root/lib/modules
-          cp -f ~/twrp/device/motorola/rhodei/*.ko ~/twrp/device/motorola/rhodei/recovery/root/vendor/lib/modules/ || true
+          mkdir -p ~/twrp/device/motorola/rhodei/recovery/root/vendor/lib/modules
           cp -f ~/twrp/device/motorola/rhodei/*.ko ~/twrp/device/motorola/rhodei/recovery/root/lib/modules/ || true
+          cp -f ~/twrp/device/motorola/rhodei/*.ko ~/twrp/device/motorola/rhodei/recovery/root/vendor/lib/modules/ || true
 
-          # 5. TWRP Official Touch & USB Configuration in BoardConfig.mk
+          # 5. Inject Touch Drivers into Boot Module Lists
+          for f in modules.load modules.load.recovery; do
+              touch ~/twrp/device/motorola/rhodei/recovery/root/lib/modules/$f
+              echo "mmi_annotate.ko" >> ~/twrp/device/motorola/rhodei/recovery/root/lib/modules/$f
+              echo "mmi_info.ko" >> ~/twrp/device/motorola/rhodei/recovery/root/lib/modules/$f
+              echo "sensors_class.ko" >> ~/twrp/device/motorola/rhodei/recovery/root/lib/modules/$f
+              echo "ili9882_mmi.ko" >> ~/twrp/device/motorola/rhodei/recovery/root/lib/modules/$f
+          done
+
+          # Update modules.dep for auto-loading
+          cat << 'EOF' >> ~/twrp/device/motorola/rhodei/recovery/root/lib/modules/modules.dep
+          ili9882_mmi.ko: sensors_class.ko
+          sensors_class.ko:
+          mmi_info.ko: mmi_annotate.ko
+          mmi_annotate.ko:
+          EOF
+
+          # 6. Auto-start Touch & USB via init.recovery.qcom.rc
+          cat << 'EOF' >> ~/twrp/device/motorola/rhodei/recovery/root/init.recovery.qcom.rc
+
+          on early-init
+              insmod /lib/modules/mmi_annotate.ko
+              insmod /lib/modules/mmi_info.ko
+              insmod /lib/modules/sensors_class.ko
+              insmod /lib/modules/ili9882_mmi.ko
+
+          on boot
+              insmod /lib/modules/mmi_annotate.ko
+              insmod /lib/modules/mmi_info.ko
+              insmod /lib/modules/sensors_class.ko
+              insmod /lib/modules/ili9882_mmi.ko
+              setprop sys.usb.controller 4e00000.dwc3
+              setprop sys.usb.config adb
+          EOF
+
+          # 7. Official BoardConfig.mk Flags for Touch & USB
           cat << 'EOF' >> ~/twrp/device/motorola/rhodei/BoardConfig.mk
 
-          # --- Official TWRP Touch & USB Configuration ---
+          # --- Official Touch, Display & USB Controller Configuration ---
           TW_THEME := portrait_hdpi
           TARGET_SCREEN_WIDTH := 1080
           TARGET_SCREEN_HEIGHT := 2400
@@ -99,6 +134,10 @@ jobs:
           TW_SCREEN_BLANK_ON_BOOT := true
           TW_NO_SCREEN_BLANK := true
           TW_STATUS_ICONS_ALIGN := center
+
+          # Qualcomm SM6375 USB Controller for ADB
+          TW_USB_CONTROLLER := "4e00000.dwc3"
+          TW_EXCLUDE_DEFAULT_USB_INIT := false
 
           # Official TWRP Module Loader
           TW_LOAD_VENDOR_MODULES := "mmi_annotate.ko mmi_info.ko sensors_class.ko ili9882_mmi.ko"
@@ -122,5 +161,5 @@ jobs:
       - name: Upload Recovery Image
         uses: actions/upload-artifact@v4
         with:
-          name: TWRP-MotoG62-rhodei-OfficialTouch
+          name: TWRP-MotoG62-rhodei-FinalTouch
           path: /home/runner/twrp/out/target/product/rhodei/*.img
