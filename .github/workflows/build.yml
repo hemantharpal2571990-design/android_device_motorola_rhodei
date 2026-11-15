@@ -39,7 +39,7 @@ jobs:
           repo init --depth=1 -u https://github.com/minimal-manifest-twrp/platform_manifest_twrp_aosp.git -b twrp-12.1
           repo sync -c -j$(nproc --all) --force-sync --no-clone-bundle --no-tags
 
-      - name: Copy Device Tree & Apply Touch Fix
+      - name: Inject Touch Drivers & Setup Ramdisk
         run: |
           mkdir -p ~/twrp/device/motorola/rhodei
           cp -r ${{ github.workspace }}/twrp_device_tree/* ~/twrp/device/motorola/rhodei/
@@ -82,10 +82,40 @@ jobs:
               twrp_rhodei-eng
           EOF
 
-          # 4. ILITEK TDDI Touch & 1080x2400 Display Fixes in BoardConfig.mk:
+          # 4. Pack .ko Touch Drivers directly into Ramdisk
+          mkdir -p ~/twrp/device/motorola/rhodei/recovery/root/vendor/lib/modules
+          mkdir -p ~/twrp/device/motorola/rhodei/recovery/root/lib/modules
+          cp -f ~/twrp/device/motorola/rhodei/*.ko ~/twrp/device/motorola/rhodei/recovery/root/vendor/lib/modules/ || true
+          cp -f ~/twrp/device/motorola/rhodei/*.ko ~/twrp/device/motorola/rhodei/recovery/root/lib/modules/ || true
+
+          # 5. Auto-Load Drivers on Boot via init script
+          mkdir -p ~/twrp/device/motorola/rhodei/recovery/root
+          cat << 'EOF' > ~/twrp/device/motorola/rhodei/recovery/root/init.recovery.qcom.rc
+          on early-init
+              insmod /vendor/lib/modules/mmi_annotate.ko
+              insmod /vendor/lib/modules/mmi_info.ko
+              insmod /vendor/lib/modules/sensors_class.ko
+              insmod /vendor/lib/modules/ili9882_mmi.ko
+              insmod /lib/modules/mmi_annotate.ko
+              insmod /lib/modules/mmi_info.ko
+              insmod /lib/modules/sensors_class.ko
+              insmod /lib/modules/ili9882_mmi.ko
+
+          on boot
+              insmod /vendor/lib/modules/mmi_annotate.ko
+              insmod /vendor/lib/modules/mmi_info.ko
+              insmod /vendor/lib/modules/sensors_class.ko
+              insmod /vendor/lib/modules/ili9882_mmi.ko
+              insmod /lib/modules/mmi_annotate.ko
+              insmod /lib/modules/mmi_info.ko
+              insmod /lib/modules/sensors_class.ko
+              insmod /lib/modules/ili9882_mmi.ko
+          EOF
+
+          # 6. Touchscreen & Display Config in BoardConfig.mk
           cat << 'EOF' >> ~/twrp/device/motorola/rhodei/BoardConfig.mk
 
-          # --- TWRP ILITEK TDDI Touch & Display Fix ---
+          # --- Real Touchscreen Configuration ---
           TW_THEME := portrait_hdpi
           TARGET_SCREEN_WIDTH := 1080
           TARGET_SCREEN_HEIGHT := 2400
@@ -93,6 +123,12 @@ jobs:
           TW_SCREEN_BLANK_ON_BOOT := true
           TW_NO_SCREEN_BLANK := true
           TW_STATUS_ICONS_ALIGN := center
+
+          BOARD_VENDOR_RAMDISK_KERNEL_MODULES += \
+              $(DEVICE_PATH)/mmi_annotate.ko \
+              $(DEVICE_PATH)/mmi_info.ko \
+              $(DEVICE_PATH)/sensors_class.ko \
+              $(DEVICE_PATH)/ili9882_mmi.ko
           EOF
 
       - name: Compile TWRP Boot Image
@@ -101,10 +137,10 @@ jobs:
           export ALLOW_MISSING_DEPENDENCIES=true
           source build/envsetup.sh
           lunch twrp_rhodei-eng
-          mka bootimage -j$(nproc --all)
+          mka adbd bootimage -j$(nproc --all)
 
       - name: Upload Recovery Image
         uses: actions/upload-artifact@v4
         with:
-          name: TWRP-MotoG62-rhodei-TouchFix
+          name: TWRP-MotoG62-rhodei-TouchWorking
           path: /home/runner/twrp/out/target/product/rhodei/*.img
